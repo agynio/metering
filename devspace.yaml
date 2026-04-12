@@ -127,6 +127,52 @@ functions:
     echo "Metering is running from source."
 
 deployments:
+  metering-db:
+    namespace: ${METERING_NAMESPACE}
+    helm:
+      chart:
+        name: postgres-helm
+        repo: oci://ghcr.io/agynio/charts
+      values:
+        fullnameOverride: metering-db
+        postgres:
+          database: metering
+          username: metering
+          password: metering
+        probes:
+          readiness:
+            execCommand:
+              - pg_isready
+              - -U
+              - metering
+              - -d
+              - metering
+          liveness:
+            execCommand:
+              - pg_isready
+              - -U
+              - metering
+              - -d
+              - metering
+        persistence:
+          enabled: false
+  metering:
+    namespace: ${METERING_NAMESPACE}
+    helm:
+      chart:
+        path: charts/metering
+      values:
+        fullnameOverride: metering
+        image:
+          repository: ghcr.io/agynio/metering
+          tag: "latest"
+        env:
+          - name: GRPC_ADDRESS
+            value: ":50051"
+          - name: DATABASE_URL
+            value: "postgresql://metering:metering@metering-db:5432/metering?sslmode=disable"
+          - name: LOG_LEVEL
+            value: "info"
   e2e-runner:
     namespace: ${METERING_NAMESPACE}
     helm:
@@ -169,6 +215,11 @@ pipelines:
     run: |-
       trap 'echo "Restoring ArgoCD sync..."; restore_argocd_sync' EXIT
       disable_argocd_sync
+      if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
+        echo "Metering deployment missing; creating helm deployments."
+        create_deployments metering-db metering
+        kubectl rollout status statefulset/metering-db -n ${METERING_NAMESPACE} --timeout=120s
+      fi
       wait_for_metering_deployment
       patch_deployment
       if [ "$(get_flag "watch")" == "true" ]; then
@@ -183,6 +234,11 @@ pipelines:
   deploy:
     run: |-
       disable_argocd_sync
+      if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
+        echo "Metering deployment missing; creating helm deployments."
+        create_deployments metering-db metering
+        kubectl rollout status statefulset/metering-db -n ${METERING_NAMESPACE} --timeout=120s
+      fi
       wait_for_metering_deployment
       patch_deployment
       start_dev --disable-pod-replace metering-deploy
