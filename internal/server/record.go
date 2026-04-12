@@ -19,6 +19,7 @@ type usageRecord struct {
 	IdempotencyKey string
 	Producer       string
 	Timestamp      time.Time
+	Month          time.Time
 	Unit           string
 	Value          int64
 	Labels         labelValues
@@ -69,6 +70,7 @@ func parseUsageRecord(record *meteringv1.UsageRecord) (usageRecord, error) {
 		return usageRecord{}, fmt.Errorf("timestamp: %w", err)
 	}
 	timestamp := record.GetTimestamp().AsTime().UTC()
+	month := time.Date(timestamp.Year(), timestamp.Month(), 1, 0, 0, 0, 0, time.UTC)
 	unit, err := parseUnit(record.GetUnit())
 	if err != nil {
 		return usageRecord{}, fmt.Errorf("unit: %w", err)
@@ -83,6 +85,7 @@ func parseUsageRecord(record *meteringv1.UsageRecord) (usageRecord, error) {
 		IdempotencyKey: idempotencyKey,
 		Producer:       producer,
 		Timestamp:      timestamp,
+		Month:          month,
 		Unit:           unit,
 		Value:          record.GetValue(),
 		Labels:         labels,
@@ -125,8 +128,8 @@ func (s *Server) recordUsage(ctx context.Context, records []usageRecord) (err er
 }
 
 func insertUsageRecords(ctx context.Context, tx pgx.Tx, records []usageRecord) error {
-	const columns = "org_id, idempotency_key, producer, timestamp, unit, value, resource_id, resource, identity_id, identity_type, thread_id, kind, status"
-	args := make([]any, 0, len(records)*13)
+	const columns = "org_id, idempotency_key, producer, timestamp, month, unit, value, resource_id, resource, identity_id, identity_type, thread_id, kind, status"
+	args := make([]any, 0, len(records)*14)
 	var builder strings.Builder
 	builder.WriteString("INSERT INTO usage_events (")
 	builder.WriteString(columns)
@@ -136,11 +139,11 @@ func insertUsageRecords(ctx context.Context, tx pgx.Tx, records []usageRecord) e
 		if i > 0 {
 			builder.WriteString(", ")
 		}
-		start := i*13 + 1
+		start := i*14 + 1
 		builder.WriteString("(")
 		if _, err := fmt.Fprintf(
 			&builder,
-			"$%d, $%d, $%d, $%d, $%d, ($%d::numeric / 1000000), $%d, $%d, $%d, $%d, $%d, $%d, $%d",
+			"$%d, $%d, $%d, $%d, $%d, $%d, ($%d::numeric / 1000000), $%d, $%d, $%d, $%d, $%d, $%d, $%d",
 			start,
 			start+1,
 			start+2,
@@ -154,6 +157,7 @@ func insertUsageRecords(ctx context.Context, tx pgx.Tx, records []usageRecord) e
 			start+10,
 			start+11,
 			start+12,
+			start+13,
 		); err != nil {
 			return fmt.Errorf("build insert row: %w", err)
 		}
@@ -164,6 +168,7 @@ func insertUsageRecords(ctx context.Context, tx pgx.Tx, records []usageRecord) e
 			record.IdempotencyKey,
 			record.Producer,
 			record.Timestamp,
+			record.Month,
 			record.Unit,
 			record.Value,
 			nullableUUID(record.Labels.ResourceID),

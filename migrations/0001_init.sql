@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
   idempotency_key TEXT NOT NULL,
   producer TEXT NOT NULL,
   timestamp TIMESTAMPTZ NOT NULL,
-  month TIMESTAMPTZ GENERATED ALWAYS AS (date_trunc('month', timestamp)) STORED,
+  month DATE NOT NULL,
   unit TEXT NOT NULL,
   value NUMERIC(20,6) NOT NULL,
   resource_id UUID,
