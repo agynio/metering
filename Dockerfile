@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY buf.gen.yaml buf.yaml ./
 RUN buf generate https://github.com/agynio/api.git#commit=30f3fe5782173a5095f563d57abaf8fc37e6b6b0 \
     --include-imports \
-    --path agynio/api/metering/v1
+    --path proto/agynio/api/metering/v1
 
 COPY . .
 
