@@ -68,7 +68,7 @@ functions:
                   done
                   echo "Files synced, starting buf generate..."
                   ls -la /opt/app/data/
-                  buf generate buf.build/agynio/api \
+                  buf generate https://github.com/agynio/api.git#commit=30f3fe5782173a5095f563d57abaf8fc37e6b6b0 \
                     --include-imports \
                     --path agynio/api/metering/v1
                   echo "buf generate complete, starting go run..."
@@ -197,7 +197,7 @@ pipelines:
       exec_container \
         --label-selector "app.kubernetes.io/name=metering-e2e" \
         -n ${METERING_NAMESPACE} \
-        -- bash -c 'cd /opt/app/data && buf generate buf.build/agynio/api --include-imports --path agynio/api/metering/v1 && go test -v -count=1 -tags e2e ./test/e2e/'
+        -- bash -c 'cd /opt/app/data && buf generate https://github.com/agynio/api.git#commit=30f3fe5782173a5095f563d57abaf8fc37e6b6b0 --include-imports --path agynio/api/metering/v1 && go test -v -count=1 -tags e2e ./test/e2e/'
       EXIT_CODE=$?
       purge_deployments e2e-runner
       exit $EXIT_CODE

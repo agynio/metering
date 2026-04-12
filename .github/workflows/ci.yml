@@ -24,7 +24,7 @@ jobs:
 
       - name: Generate protobuf bindings
         run: |
-          buf generate buf.build/agynio/api \
+          buf generate https://github.com/agynio/api.git#commit=30f3fe5782173a5095f563d57abaf8fc37e6b6b0 \
             --include-imports \
             --path agynio/api/metering/v1
 

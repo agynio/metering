@@ -15,6 +15,7 @@ FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
 WORKDIR /src
 
 COPY --from=buf /usr/local/bin/buf /usr/local/bin/buf
+RUN apk add --no-cache git
 
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -22,7 +23,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
 COPY buf.gen.yaml buf.yaml ./
-RUN buf generate buf.build/agynio/api \
+RUN buf generate https://github.com/agynio/api.git#commit=30f3fe5782173a5095f563d57abaf8fc37e6b6b0 \
     --include-imports \
     --path agynio/api/metering/v1
 
