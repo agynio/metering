@@ -105,7 +105,7 @@ functions:
 
     echo "Waiting for metering source sync and process start..."
     ELAPSED=0
-    LABEL_SELECTOR="app.kubernetes.io/name=metering,app.kubernetes.io/instance=metering"
+    LABEL_SELECTOR="app.kubernetes.io/instance=metering"
     until kubectl logs -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" --tail=200 2>/dev/null | \
       grep -q "metering: ready"; do
       sleep 5
@@ -131,48 +131,87 @@ deployments:
     namespace: ${METERING_NAMESPACE}
     helm:
       chart:
-        name: postgres-helm
-        repo: oci://ghcr.io/agynio/charts
+        name: component-chart
+        repo: https://charts.devspace.sh
       values:
-        fullnameOverride: metering-db
-        postgres:
-          database: metering
-          username: metering
-          password: metering
-        probes:
-          readiness:
-            execCommand:
-              - pg_isready
-              - -U
-              - metering
-              - -d
-              - metering
-          liveness:
-            execCommand:
-              - pg_isready
-              - -U
-              - metering
-              - -d
-              - metering
-        persistence:
-          enabled: false
+        containers:
+          - name: metering-db
+            image: postgres:16.6-alpine
+            env:
+              - name: POSTGRES_DB
+                value: metering
+              - name: POSTGRES_USER
+                value: metering
+              - name: POSTGRES_PASSWORD
+                value: metering
+              - name: PGDATA
+                value: /var/lib/postgresql/data/pgdata
+            ports:
+              - name: postgres
+                containerPort: 5432
+            readinessProbe:
+              exec:
+                command:
+                  - pg_isready
+                  - -U
+                  - metering
+                  - -d
+                  - metering
+              initialDelaySeconds: 5
+              periodSeconds: 5
+              timeoutSeconds: 5
+              failureThreshold: 6
+            livenessProbe:
+              exec:
+                command:
+                  - pg_isready
+                  - -U
+                  - metering
+                  - -d
+                  - metering
+              initialDelaySeconds: 10
+              periodSeconds: 10
+              timeoutSeconds: 5
+              failureThreshold: 6
+            volumeMounts:
+              - containerPath: /var/lib/postgresql/data
+                volume:
+                  name: data
+        service:
+          ports:
+            - name: postgres
+              port: 5432
+              containerPort: 5432
+        volumes:
+          - name: data
+            emptyDir: {}
   metering:
     namespace: ${METERING_NAMESPACE}
     helm:
       chart:
-        path: charts/metering
+        name: component-chart
+        repo: https://charts.devspace.sh
       values:
-        fullnameOverride: metering
-        image:
-          repository: ghcr.io/agynio/metering
-          tag: "latest"
-        env:
-          - name: GRPC_ADDRESS
-            value: ":50051"
-          - name: DATABASE_URL
-            value: "postgresql://metering:metering@metering-db:5432/metering?sslmode=disable"
-          - name: LOG_LEVEL
-            value: "info"
+        labels:
+          app.kubernetes.io/instance: metering
+        containers:
+          - name: metering
+            image: ghcr.io/agynio/metering:latest
+            env:
+              - name: GRPC_ADDRESS
+                value: ":50051"
+              - name: DATABASE_URL
+                value: "postgresql://metering:metering@metering-db:5432/metering?sslmode=disable"
+              - name: LOG_LEVEL
+                value: "info"
+            ports:
+              - name: grpc
+                containerPort: 50051
+        service:
+          ports:
+            - name: grpc
+              port: 50051
+              containerPort: 50051
   e2e-runner:
     namespace: ${METERING_NAMESPACE}
     helm:
@@ -218,7 +257,7 @@ pipelines:
       if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
         echo "Metering deployment missing; creating helm deployments."
         create_deployments metering-db metering
-        kubectl rollout status statefulset/metering-db -n ${METERING_NAMESPACE} --timeout=120s
+        kubectl rollout status deployment/metering-db -n ${METERING_NAMESPACE} --timeout=120s
       fi
       wait_for_metering_deployment
       patch_deployment
@@ -237,7 +276,7 @@ pipelines:
       if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
         echo "Metering deployment missing; creating helm deployments."
         create_deployments metering-db metering
-        kubectl rollout status statefulset/metering-db -n ${METERING_NAMESPACE} --timeout=120s
+        kubectl rollout status deployment/metering-db -n ${METERING_NAMESPACE} --timeout=120s
       fi
       wait_for_metering_deployment
       patch_deployment
@@ -267,7 +306,6 @@ dev:
   metering:
     namespace: ${METERING_NAMESPACE}
     labelSelector:
-      app.kubernetes.io/name: metering
       app.kubernetes.io/instance: metering
     containers:
       metering:
@@ -310,7 +348,6 @@ dev:
   metering-deploy:
     namespace: ${METERING_NAMESPACE}
     labelSelector:
-      app.kubernetes.io/name: metering
       app.kubernetes.io/instance: metering
     containers:
       metering:
