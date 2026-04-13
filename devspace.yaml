@@ -287,7 +287,7 @@ pipelines:
   test-e2e:
     run: |-
       create_deployments e2e-runner
-      start_dev e2e-runner
+      start_dev e2e-runner-test
       echo "Sync complete. Running e2e tests..."
       exec_container \
         --label-selector "app.kubernetes.io/name=metering-e2e" \
@@ -345,6 +345,32 @@ dev:
           - /.gen/
           - /tmp/
 
+  # One-shot variant of e2e-runner for CI test pipeline. Keep sync excludePaths in sync.
+  e2e-runner-test:
+    namespace: ${METERING_NAMESPACE}
+    labelSelector:
+      app.kubernetes.io/name: metering-e2e
+    command: ["sleep", "infinity"]
+    workingDir: /opt/app/data
+    sync:
+      - path: ./:/opt/app/data
+        noWatch: true
+        excludePaths:
+          - .git/
+          - .devspace/
+          - /.gen/
+          - /tmp/
+        uploadExcludePaths:
+          - .git/
+          - .devspace/
+          - /.gen/
+          - /tmp/
+        downloadExcludePaths:
+          - .git/
+          - .devspace/
+          - /.gen/
+          - /tmp/
+
   metering-deploy:
     namespace: ${METERING_NAMESPACE}
     labelSelector:
@@ -354,7 +380,18 @@ dev:
         container: metering
         sync:
           - path: ./:/opt/app/data
+            noWatch: true
             excludePaths:
+              - .git/
+              - .devspace/
+              - /.gen/
+              - /tmp/
+            uploadExcludePaths:
+              - .git/
+              - .devspace/
+              - /.gen/
+              - /tmp/
+            downloadExcludePaths:
               - .git/
               - .devspace/
               - /.gen/
