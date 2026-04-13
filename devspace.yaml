@@ -294,7 +294,7 @@ pipelines:
         -n ${METERING_NAMESPACE} \
         -- bash -c 'cd /opt/app/data && buf generate https://github.com/agynio/api.git#commit=30f3fe5782173a5095f563d57abaf8fc37e6b6b0 --include-imports --path proto/agynio/api/metering/v1 && go test -v -count=1 -tags e2e ./test/e2e/'
       EXIT_CODE=$?
-      stop_dev e2e-runner
+      stop_dev e2e-runner-test
       purge_deployments e2e-runner
       exit $EXIT_CODE
 
