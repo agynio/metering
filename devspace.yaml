@@ -254,10 +254,17 @@ pipelines:
     run: |-
       trap 'echo "Restoring ArgoCD sync..."; restore_argocd_sync' EXIT
       disable_argocd_sync
+      if ! kubectl get deployment metering-db -n ${METERING_NAMESPACE} >/dev/null 2>&1 || \
+         ! kubectl get service metering-db -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
+        echo "Metering DB deployment or service missing; creating helm deployment."
+        create_deployments metering-db
+      else
+        echo "Metering DB already exists; skipping creation."
+      fi
+      kubectl rollout status deployment/metering-db -n ${METERING_NAMESPACE} --timeout=120s
       if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
-        echo "Metering deployment missing; creating helm deployments."
-        create_deployments metering-db metering
-        kubectl rollout status deployment/metering-db -n ${METERING_NAMESPACE} --timeout=120s
+        echo "Metering deployment missing; creating helm deployment."
+        create_deployments metering
       fi
       wait_for_metering_deployment
       patch_deployment
@@ -273,10 +280,17 @@ pipelines:
   deploy:
     run: |-
       disable_argocd_sync
+      if ! kubectl get deployment metering-db -n ${METERING_NAMESPACE} >/dev/null 2>&1 || \
+         ! kubectl get service metering-db -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
+        echo "Metering DB deployment or service missing; creating helm deployment."
+        create_deployments metering-db
+      else
+        echo "Metering DB already exists; skipping creation."
+      fi
+      kubectl rollout status deployment/metering-db -n ${METERING_NAMESPACE} --timeout=120s
       if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
-        echo "Metering deployment missing; creating helm deployments."
-        create_deployments metering-db metering
-        kubectl rollout status deployment/metering-db -n ${METERING_NAMESPACE} --timeout=120s
+        echo "Metering deployment missing; creating helm deployment."
+        create_deployments metering
       fi
       wait_for_metering_deployment
       patch_deployment
