@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -9,29 +10,58 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestBuildUsageQueryFiveMinuteBuckets(t *testing.T) {
+func TestBuildUsageQueryBucketedGranularities(t *testing.T) {
 	start := time.Date(2026, 4, 22, 10, 3, 0, 0, time.UTC)
 	end := start.Add(30 * time.Minute)
-	query := usageQuery{
-		OrgID:       uuid.New(),
-		Unit:        meteringv1.Unit_UNIT_TOKENS.String(),
-		Start:       start,
-		End:         end,
-		Granularity: meteringv1.Granularity_GRANULARITY_FIVE_MINUTES,
-		TimeZone:    "UTC",
+	cases := []struct {
+		name        string
+		granularity meteringv1.Granularity
+		interval    string
+	}{
+		{
+			name:        "five-minutes",
+			granularity: meteringv1.Granularity_GRANULARITY_FIVE_MINUTES,
+			interval:    "5 minutes",
+		},
+		{
+			name:        "hour",
+			granularity: meteringv1.Granularity_GRANULARITY_HOUR,
+			interval:    "1 hour",
+		},
+		{
+			name:        "six-hours",
+			granularity: meteringv1.Granularity_GRANULARITY_SIX_HOURS,
+			interval:    "6 hours",
+		},
 	}
 
-	sqlQuery, args := buildUsageQuery(query)
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			query := usageQuery{
+				OrgID:       uuid.New(),
+				Unit:        meteringv1.Unit_UNIT_TOKENS.String(),
+				Start:       start,
+				End:         end,
+				Granularity: testCase.granularity,
+				TimeZone:    "UTC",
+			}
 
-	expectedBucket := "date_bin('5 minutes'::interval, timestamp, timezone($5, date_trunc('day', timezone($5, timestamp))))"
-	if !strings.Contains(sqlQuery, expectedBucket) {
-		t.Fatalf("expected bucket expression %q in query: %s", expectedBucket, sqlQuery)
-	}
-	if len(args) != 5 {
-		t.Fatalf("expected 5 arguments, got %d", len(args))
-	}
-	if args[4] != "UTC" {
-		t.Fatalf("expected time_zone arg UTC, got %v", args[4])
+			sqlQuery, args := buildUsageQuery(query)
+
+			expectedBucket := fmt.Sprintf(
+				"date_bin('%s'::interval, timestamp, timezone($5, date_trunc('day', timezone($5, timestamp))))",
+				testCase.interval,
+			)
+			if !strings.Contains(sqlQuery, expectedBucket) {
+				t.Fatalf("expected bucket expression %q in query: %s", expectedBucket, sqlQuery)
+			}
+			if len(args) != 5 {
+				t.Fatalf("expected 5 arguments, got %d", len(args))
+			}
+			if args[4] != "UTC" {
+				t.Fatalf("expected time_zone arg UTC, got %v", args[4])
+			}
+		})
 	}
 }
 
@@ -58,5 +88,27 @@ func TestBuildUsageQueryDayBucketsTimeZoneAlignment(t *testing.T) {
 	}
 	if args[4] != "America/Los_Angeles" {
 		t.Fatalf("expected time_zone arg America/Los_Angeles, got %v", args[4])
+	}
+}
+
+func TestBuildUsageQueryTotalDoesNotIncludeTimeZone(t *testing.T) {
+	start := time.Date(2026, 4, 22, 10, 3, 0, 0, time.UTC)
+	end := start.Add(30 * time.Minute)
+	query := usageQuery{
+		OrgID:       uuid.New(),
+		Unit:        meteringv1.Unit_UNIT_TOKENS.String(),
+		Start:       start,
+		End:         end,
+		Granularity: meteringv1.Granularity_GRANULARITY_TOTAL,
+		TimeZone:    "UTC",
+	}
+
+	sqlQuery, args := buildUsageQuery(query)
+
+	if strings.Contains(sqlQuery, "timezone($5") {
+		t.Fatalf("expected total query to omit time_zone bucket expression: %s", sqlQuery)
+	}
+	if len(args) != 4 {
+		t.Fatalf("expected 4 arguments, got %d", len(args))
 	}
 }
