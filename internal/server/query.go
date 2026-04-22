@@ -22,6 +22,7 @@ type usageQuery struct {
 	Filters     []labelFilter
 	GroupBy     string
 	Granularity meteringv1.Granularity
+	TimeZone    string
 }
 
 func (s *Server) QueryUsage(ctx context.Context, req *meteringv1.QueryUsageRequest) (*meteringv1.QueryUsageResponse, error) {
@@ -64,9 +65,17 @@ func (s *Server) QueryUsage(ctx context.Context, req *meteringv1.QueryUsageReque
 	}
 	granularity := req.GetGranularity()
 	switch granularity {
-	case meteringv1.Granularity_GRANULARITY_TOTAL, meteringv1.Granularity_GRANULARITY_DAY:
+	case meteringv1.Granularity_GRANULARITY_TOTAL,
+		meteringv1.Granularity_GRANULARITY_DAY,
+		meteringv1.Granularity_GRANULARITY_FIVE_MINUTES,
+		meteringv1.Granularity_GRANULARITY_HOUR,
+		meteringv1.Granularity_GRANULARITY_SIX_HOURS:
 	default:
-		return nil, status.Error(codes.InvalidArgument, "granularity must be total or day")
+		return nil, status.Error(codes.InvalidArgument, "granularity must be total, day, five_minutes, hour, or six_hours")
+	}
+	timeZone, err := parseTimeZone(req.GetTimeZone())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "time_zone: %v", err)
 	}
 
 	result, err := s.queryUsage(ctx, usageQuery{
@@ -77,6 +86,7 @@ func (s *Server) QueryUsage(ctx context.Context, req *meteringv1.QueryUsageReque
 		Filters:     filters,
 		GroupBy:     groupBy,
 		Granularity: granularity,
+		TimeZone:    timeZone,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "query usage: %v", err)
@@ -125,10 +135,14 @@ func buildUsageQuery(query usageQuery) (string, []any) {
 	selectParts := make([]string, 0, 3)
 	groupByParts := make([]string, 0, 2)
 	orderParts := make([]string, 0, 2)
+	args := []any{query.OrgID, query.Unit, query.Start, query.End}
 
-	if query.Granularity == meteringv1.Granularity_GRANULARITY_DAY {
-		selectParts = append(selectParts, "date_trunc('day', timestamp) AS bucket_ts")
-		groupByParts = append(groupByParts, "date_trunc('day', timestamp)")
+	if query.Granularity != meteringv1.Granularity_GRANULARITY_TOTAL {
+		timeZoneArg := len(args) + 1
+		args = append(args, query.TimeZone)
+		bucketExpr := bucketExpression(query.Granularity, timeZoneArg)
+		selectParts = append(selectParts, fmt.Sprintf("%s AS bucket_ts", bucketExpr))
+		groupByParts = append(groupByParts, bucketExpr)
 		orderParts = append(orderParts, "bucket_ts")
 	} else {
 		selectParts = append(selectParts, "NULL::timestamptz AS bucket_ts")
@@ -150,7 +164,6 @@ func buildUsageQuery(query usageQuery) (string, []any) {
 		"timestamp >= $3",
 		"timestamp <= $4",
 	}
-	args := []any{query.OrgID, query.Unit, query.Start, query.End}
 
 	for _, filter := range query.Filters {
 		args = append(args, filter.Value)
@@ -175,4 +188,31 @@ func buildUsageQuery(query usageQuery) (string, []any) {
 	}
 
 	return builder.String(), args
+}
+
+func bucketExpression(granularity meteringv1.Granularity, timeZoneArg int) string {
+	localMidnight := fmt.Sprintf(
+		"timezone($%d, date_trunc('day', timezone($%d, timestamp)))",
+		timeZoneArg,
+		timeZoneArg,
+	)
+
+	switch granularity {
+	case meteringv1.Granularity_GRANULARITY_DAY:
+		return localMidnight
+	case meteringv1.Granularity_GRANULARITY_FIVE_MINUTES:
+		return dateBinExpression("5 minutes", localMidnight)
+	case meteringv1.Granularity_GRANULARITY_HOUR:
+		return dateBinExpression("1 hour", localMidnight)
+	case meteringv1.Granularity_GRANULARITY_SIX_HOURS:
+		return dateBinExpression("6 hours", localMidnight)
+	case meteringv1.Granularity_GRANULARITY_TOTAL:
+		panic("bucket expression requested for total granularity")
+	}
+
+	panic(fmt.Sprintf("unsupported granularity: %s", granularity.String()))
+}
+
+func dateBinExpression(interval, origin string) string {
+	return fmt.Sprintf("date_bin('%s'::interval, timestamp, %s)", interval, origin)
 }
