@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	meteringv1 "github.com/agynio/metering/.gen/go/agynio/api/metering/v1"
 	"github.com/agynio/metering/internal/config"
