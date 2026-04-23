@@ -33,10 +33,11 @@ devspace dev -w
 
 ### Run tests
 
-Runs E2E tests in a separate test pod. This command only manages the test pod — it does not deploy or modify the service. Tests run against whatever is currently deployed: pinned release images by default, or source code if `devspace dev` was called first.
+E2E coverage is centralized in [agynio/e2e](https://github.com/agynio/e2e) under the go-core suite.
 
 ```bash
-devspace run test-e2e
+# From the agynio/e2e repo
+devspace run test-e2e --tag svc_metering
 ```
 
 See [E2E Testing](https://github.com/agynio/architecture/blob/main/architecture/operations/e2e-testing.md).
