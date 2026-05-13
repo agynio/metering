@@ -113,7 +113,7 @@ func TestBuildUsageQueryTotalDoesNotIncludeTimeZone(t *testing.T) {
 	}
 }
 
-func TestBuildUsageQueryReturnsStoredUnits(t *testing.T) {
+func TestBuildUsageQueryReturnsMicroUnits(t *testing.T) {
 	query := usageQuery{
 		OrgID:       uuid.New(),
 		Unit:        meteringv1.Unit_UNIT_COUNT.String(),
@@ -125,10 +125,28 @@ func TestBuildUsageQueryReturnsStoredUnits(t *testing.T) {
 
 	sqlQuery, _ := buildUsageQuery(query)
 
-	if !strings.Contains(sqlQuery, "SUM(value)::bigint AS value") {
-		t.Fatalf("expected query to sum stored values directly: %s", sqlQuery)
+	if !strings.Contains(sqlQuery, "(SUM(value) * 1000000)::bigint AS value") {
+		t.Fatalf("expected query to return micro-unit values: %s", sqlQuery)
 	}
-	if strings.Contains(sqlQuery, "SUM(value) * 1000000") {
-		t.Fatalf("expected query not to multiply stored values: %s", sqlQuery)
+}
+
+func TestUsageQueryUsesSameScaleAsInsert(t *testing.T) {
+	if usageValueScale != 1000000 {
+		t.Fatalf("expected usage value scale 1000000, got %d", usageValueScale)
+	}
+
+	query := usageQuery{
+		OrgID:       uuid.New(),
+		Unit:        meteringv1.Unit_UNIT_TOKENS.String(),
+		Start:       time.Date(2026, 4, 22, 10, 3, 0, 0, time.UTC),
+		End:         time.Date(2026, 4, 22, 10, 33, 0, 0, time.UTC),
+		Granularity: meteringv1.Granularity_GRANULARITY_TOTAL,
+		TimeZone:    "UTC",
+	}
+
+	sqlQuery, _ := buildUsageQuery(query)
+
+	if !strings.Contains(sqlQuery, fmt.Sprintf("SUM(value) * %d", usageValueScale)) {
+		t.Fatalf("expected query to use usage value scale %d: %s", usageValueScale, sqlQuery)
 	}
 }
