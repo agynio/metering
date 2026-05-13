@@ -112,3 +112,23 @@ func TestBuildUsageQueryTotalDoesNotIncludeTimeZone(t *testing.T) {
 		t.Fatalf("expected 4 arguments, got %d", len(args))
 	}
 }
+
+func TestBuildUsageQueryReturnsStoredUnits(t *testing.T) {
+	query := usageQuery{
+		OrgID:       uuid.New(),
+		Unit:        meteringv1.Unit_UNIT_COUNT.String(),
+		Start:       time.Date(2026, 4, 22, 10, 3, 0, 0, time.UTC),
+		End:         time.Date(2026, 4, 22, 10, 33, 0, 0, time.UTC),
+		Granularity: meteringv1.Granularity_GRANULARITY_TOTAL,
+		TimeZone:    "UTC",
+	}
+
+	sqlQuery, _ := buildUsageQuery(query)
+
+	if !strings.Contains(sqlQuery, "SUM(value)::bigint AS value") {
+		t.Fatalf("expected query to sum stored values directly: %s", sqlQuery)
+	}
+	if strings.Contains(sqlQuery, "SUM(value) * 1000000") {
+		t.Fatalf("expected query not to multiply stored values: %s", sqlQuery)
+	}
+}
