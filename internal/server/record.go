@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const usageValueScale = 1000000
+
 type usageRecord struct {
 	OrgID          uuid.UUID
 	IdempotencyKey string
@@ -143,7 +145,7 @@ func insertUsageRecords(ctx context.Context, tx pgx.Tx, records []usageRecord) e
 		builder.WriteString("(")
 		if _, err := fmt.Fprintf(
 			&builder,
-			"$%d, $%d, $%d, $%d, $%d, $%d, ($%d::numeric / 1000000), $%d, $%d, $%d, $%d, $%d, $%d, $%d",
+			"$%d, $%d, $%d, $%d, $%d, $%d, ($%d::numeric / %d), $%d, $%d, $%d, $%d, $%d, $%d, $%d",
 			start,
 			start+1,
 			start+2,
@@ -151,6 +153,7 @@ func insertUsageRecords(ctx context.Context, tx pgx.Tx, records []usageRecord) e
 			start+4,
 			start+5,
 			start+6,
+			usageValueScale,
 			start+7,
 			start+8,
 			start+9,

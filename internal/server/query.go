@@ -156,7 +156,7 @@ func buildUsageQuery(query usageQuery) (string, []any) {
 		selectParts = append(selectParts, "'' AS group_value")
 	}
 
-	selectParts = append(selectParts, "(SUM(value) * 1000000)::bigint AS value")
+	selectParts = append(selectParts, fmt.Sprintf("(SUM(value) * %d)::bigint AS value", usageValueScale))
 
 	whereParts := []string{
 		"org_id = $1",
