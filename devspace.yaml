@@ -70,9 +70,9 @@ functions:
                   done
                   echo "Files synced, starting buf generate..."
                   ls -la /opt/app/data/
-                  buf generate https://github.com/agynio/api.git#commit=315856007b4085280af71243d20a8fd0651ba270 \
+                  buf generate buf.build/agynio/api \
                     --include-imports \
-                    --path proto/agynio/api/metering/v1
+                    --path agynio/api/metering/v1
                   echo "buf generate complete, starting go run..."
                   exec go run ./cmd/metering
               volumeMounts:

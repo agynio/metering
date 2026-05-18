@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,9 +27,9 @@ jobs:
 
       - name: Generate protobuf bindings
         run: |
-          buf generate https://github.com/agynio/api.git#commit=315856007b4085280af71243d20a8fd0651ba270 \
+          buf generate buf.build/agynio/api \
             --include-imports \
-            --path proto/agynio/api/metering/v1
+            --path agynio/api/metering/v1
 
       - name: Run tests
         run: go test ./...
