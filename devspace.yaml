@@ -62,24 +62,19 @@ functions:
                 - -c
                 - |
                   set -eux
-                  if [ -n "${CI:-}" ]; then
-                    echo "Waiting for synced metering binary..."
-                    elapsed=0
-                    while [ ! -x /opt/app/data/dist/metering-devspace ]; do
-                      sleep 1; elapsed=$((elapsed + 1))
-                      [ "$elapsed" -ge 300 ] && { echo "ERROR: binary sync timeout" >&2; exit 1; }
-                    done
-                    echo "Binary synced, starting metering from source build..."
-                    exec /opt/app/data/dist/metering-devspace
-                  fi
                   elapsed=0
-                  while [ ! -f /opt/app/data/go.mod ] || \
-                    [ ! -f /opt/app/data/go.sum ] || \
-                    [ ! -f /opt/app/data/cmd/metering/main.go ] || \
-                    [ ! -f /opt/app/data/internal/config/config.go ]; do
+                  while [ ! -x /opt/app/data/dist/metering-devspace ] && \
+                    { [ ! -f /opt/app/data/go.mod ] || \
+                      [ ! -f /opt/app/data/go.sum ] || \
+                      [ ! -f /opt/app/data/cmd/metering/main.go ] || \
+                      [ ! -f /opt/app/data/internal/config/config.go ]; }; do
                     sleep 1; elapsed=$((elapsed + 1))
                     [ "$elapsed" -ge 300 ] && { echo "ERROR: sync timeout" >&2; exit 1; }
                   done
+                  if [ -x /opt/app/data/dist/metering-devspace ]; then
+                    echo "Metering binary synced; starting source build..."
+                    exec /opt/app/data/dist/metering-devspace
+                  fi
                   echo "Files synced, starting buf generate..."
                   ls -la /opt/app/data/
                   buf generate buf.build/agynio/api \
