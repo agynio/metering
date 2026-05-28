@@ -18,9 +18,7 @@ functions:
   restore_argocd_sync: &restore_argocd_sync |-
     if [ -n "${CI:-}" ]; then
       echo "Skipping ArgoCD auto-sync restore in CI."
-      exit 0
-    fi
-    if kubectl get application metering -n argocd >/dev/null 2>&1; then
+    elif kubectl get application metering -n argocd >/dev/null 2>&1; then
       echo "Re-enabling ArgoCD auto-sync for metering..."
       kubectl patch application metering -n argocd \
         --type merge \
@@ -260,10 +258,10 @@ pipelines:
       if [ "$(get_flag "watch")" == "true" ]; then
         start_dev --disable-pod-replace metering
       else
-        start_dev --disable-pod-replace metering
+        start_dev --disable-pod-replace metering-deploy
         wait_for_metering
         echo "Dev environment ready. Stopping dev session."
-        stop_dev metering
+        stop_dev metering-deploy
       fi
 
   deploy:
