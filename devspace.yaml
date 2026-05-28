@@ -16,7 +16,9 @@ functions:
       echo "WARNING: ArgoCD Application 'metering' not found in argocd namespace."
     fi
   restore_argocd_sync: &restore_argocd_sync |-
-    if kubectl get application metering -n argocd >/dev/null 2>&1; then
+    if [ -n "${CI:-}" ]; then
+      echo "Skipping ArgoCD auto-sync restore in CI."
+    elif kubectl get application metering -n argocd >/dev/null 2>&1; then
       echo "Re-enabling ArgoCD auto-sync for metering..."
       kubectl patch application metering -n argocd \
         --type merge \
@@ -61,19 +63,25 @@ functions:
                 - |
                   set -eux
                   elapsed=0
-                  while [ ! -f /opt/app/data/go.mod ] || \
-                    [ ! -f /opt/app/data/go.sum ] || \
-                    [ ! -f /opt/app/data/cmd/metering/main.go ] || \
-                    [ ! -f /opt/app/data/internal/config/config.go ]; do
+                  while [ ! -x /opt/app/data/dist/metering-devspace ] && \
+                    { [ ! -f /opt/app/data/go.mod ] || \
+                      [ ! -f /opt/app/data/go.sum ] || \
+                      [ ! -f /opt/app/data/cmd/metering/main.go ] || \
+                      [ ! -f /opt/app/data/internal/config/config.go ]; }; do
                     sleep 1; elapsed=$((elapsed + 1))
                     [ "$elapsed" -ge 300 ] && { echo "ERROR: sync timeout" >&2; exit 1; }
                   done
+                  if [ -x /opt/app/data/dist/metering-devspace ]; then
+                    echo "Metering binary synced; starting source build..."
+                    exec /opt/app/data/dist/metering-devspace
+                  fi
                   echo "Files synced, starting buf generate..."
                   ls -la /opt/app/data/
                   buf generate buf.build/agynio/api \
                     --include-imports \
                     --path agynio/api/metering/v1
                   echo "buf generate complete, starting go run..."
+                  export GOTOOLCHAIN=local
                   exec go run ./cmd/metering
               volumeMounts:
                 - name: data
@@ -100,6 +108,26 @@ functions:
                   type: RuntimeDefault
     EOF
     )"
+  print_metering_diagnostics: |-
+    LABEL_SELECTOR="app.kubernetes.io/instance=metering"
+
+    echo "Diagnostic pod list:"
+    kubectl get pods -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" -o wide || true
+
+    echo "Diagnostic deployment describe:"
+    kubectl describe deployment metering -n ${METERING_NAMESPACE} || true
+
+    echo "Diagnostic pod describe:"
+    kubectl describe pods -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" || true
+
+    echo "Diagnostic logs (tail 200):"
+    kubectl logs -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" --tail=200 --all-containers=true || true
+
+    echo "Diagnostic previous logs (tail 200):"
+    kubectl logs -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" --tail=200 --all-containers=true --previous || true
+
+    echo "Diagnostic namespace events:"
+    kubectl get events -n ${METERING_NAMESPACE} --sort-by=.lastTimestamp || true
   wait_for_metering: |-
     echo "Waiting for metering deployment to roll out..."
     kubectl rollout status deployment/metering \
@@ -114,19 +142,17 @@ functions:
       ELAPSED=$((ELAPSED + 5))
       if [ "$ELAPSED" -ge 600 ]; then
         echo "ERROR: metering ready log not found within 600s" >&2
-        echo "Diagnostic pod list:" >&2
-        kubectl get pods -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" -o wide >&2 || true
-        echo "Diagnostic logs (tail 200):" >&2
-        kubectl logs -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" --tail=200 >&2 || true
-        echo "Diagnostic previous logs (tail 200):" >&2
-        kubectl logs -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" --tail=200 --previous >&2 || true
-        echo "Diagnostic pod describe:" >&2
-        kubectl describe pods -n ${METERING_NAMESPACE} -l "${LABEL_SELECTOR}" >&2 || true
+        print_metering_diagnostics >&2
         exit 1
       fi
       echo "  still waiting... (${ELAPSED}s)"
     done
     echo "Metering is running from source."
+  restore_argocd_sync_preserving_status: |-
+    STATUS=$?
+    echo "Restoring ArgoCD sync..."
+    restore_argocd_sync
+    exit "$STATUS"
 
 deployments:
   metering-db:
@@ -220,6 +246,8 @@ commands:
     devspace run-pipeline deploy -n ${DEVSPACE_NAMESPACE} $@
   restore-argocd: |-
     devspace run-pipeline restore-argocd -n ${DEVSPACE_NAMESPACE} $@
+  diagnostics: |-
+    devspace run-pipeline diagnostics -n ${DEVSPACE_NAMESPACE} $@
 
 pipelines:
   dev:
@@ -228,7 +256,7 @@ pipelines:
         short: w
         description: "Keep DevSpace running and stream logs"
     run: |-
-      trap 'echo "Restoring ArgoCD sync..."; restore_argocd_sync' EXIT
+      trap 'restore_argocd_sync_preserving_status' EXIT
       disable_argocd_sync
       if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
         echo "Metering deployment missing; creating helm deployments."
@@ -240,10 +268,10 @@ pipelines:
       if [ "$(get_flag "watch")" == "true" ]; then
         start_dev --disable-pod-replace metering
       else
-        start_dev --disable-pod-replace metering
-        sleep 10
+        start_dev --disable-pod-replace metering-deploy
+        wait_for_metering
         echo "Dev environment ready. Stopping dev session."
-        stop_dev metering
+        stop_dev metering-deploy
       fi
 
   deploy:
@@ -260,9 +288,22 @@ pipelines:
       wait_for_metering
       echo "Deploy complete. Metering is running from source."
 
+  diagnostics:
+    run: |-
+      print_metering_diagnostics
+
   restore-argocd:
     run: |-
       restore_argocd_sync
+
+hooks:
+  - name: restore-argocd-auto-sync
+    events:
+      - after:dev:metering
+    command: bash
+    args:
+      - -c
+      - *restore_argocd_sync
 
 dev:
   metering:
@@ -301,7 +342,7 @@ dev:
       metering:
         container: metering
         sync:
-          - path: ./:/opt/app/data
+          - path: ./dist/metering-devspace:/opt/app/data/dist/metering-devspace
             noWatch: true
             excludePaths:
               - .git/
