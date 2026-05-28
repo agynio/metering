@@ -62,6 +62,16 @@ functions:
                 - -c
                 - |
                   set -eux
+                  if [ -n "${CI:-}" ]; then
+                    echo "Waiting for synced metering binary..."
+                    elapsed=0
+                    while [ ! -x /opt/app/data/dist/metering-devspace ]; do
+                      sleep 1; elapsed=$((elapsed + 1))
+                      [ "$elapsed" -ge 300 ] && { echo "ERROR: binary sync timeout" >&2; exit 1; }
+                    done
+                    echo "Binary synced, starting metering from source build..."
+                    exec /opt/app/data/dist/metering-devspace
+                  fi
                   elapsed=0
                   while [ ! -f /opt/app/data/go.mod ] || \
                     [ ! -f /opt/app/data/go.sum ] || \
@@ -337,7 +347,7 @@ dev:
       metering:
         container: metering
         sync:
-          - path: ./:/opt/app/data
+          - path: ./dist/metering-devspace:/opt/app/data/dist/metering-devspace
             noWatch: true
             excludePaths:
               - .git/

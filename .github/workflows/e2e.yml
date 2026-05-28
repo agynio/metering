@@ -26,6 +26,29 @@ jobs:
       - name: Setup DevSpace
         uses: agynio/e2e/.github/actions/setup-devspace@main
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          version: 1.66.0
+
+      - name: Prepare generated sources
+        run: |
+          buf generate buf.build/agynio/api \
+            --include-imports \
+            --path agynio/api/metering/v1
+
+      - name: Build source binary for DevSpace
+        run: |
+          go mod download
+          mkdir -p dist
+          CGO_ENABLED=0 go build -o dist/metering-devspace ./cmd/metering
+
       - name: Deploy metering from source
         run: devspace dev
 
