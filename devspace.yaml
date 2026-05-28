@@ -143,6 +143,11 @@ functions:
       echo "  still waiting... (${ELAPSED}s)"
     done
     echo "Metering is running from source."
+  restore_argocd_sync_preserving_status: |-
+    STATUS=$?
+    echo "Restoring ArgoCD sync..."
+    restore_argocd_sync
+    exit "$STATUS"
 
 deployments:
   metering-db:
@@ -246,7 +251,7 @@ pipelines:
         short: w
         description: "Keep DevSpace running and stream logs"
     run: |-
-      trap 'echo "Restoring ArgoCD sync..."; restore_argocd_sync' EXIT
+      trap 'restore_argocd_sync_preserving_status' EXIT
       disable_argocd_sync
       if ! kubectl get deployment metering -n ${METERING_NAMESPACE} >/dev/null 2>&1; then
         echo "Metering deployment missing; creating helm deployments."
