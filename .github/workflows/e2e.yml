@@ -27,7 +27,11 @@ jobs:
         uses: agynio/e2e/.github/actions/setup-devspace@main
 
       - name: Deploy metering from source
-        run: devspace run deploy
+        run: devspace dev
+
+      - name: Capture metering diagnostics
+        if: failure()
+        run: devspace run diagnostics
 
       - name: Run E2E tests
         uses: agynio/e2e/.github/actions/run-tests@main
